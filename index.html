@@ -52,7 +52,7 @@
 </table>
 </div>
 <footer>
-  資料來源：個股為證交所 MIS 即時行情，開啟頁面時約每 15 秒自動更新；台指近與加權指經期交所資料中繼（約 5 分鐘更新）。盤前顯示試撮價；成交價紅底＝漲停、綠底＝跌停。量為累計成交張數。本頁僅供參考，不構成投資建議。
+  資料來源：個股為證交所 MIS 即時行情，開啟頁面時約每 5 秒自動更新；台指近與加權指經期交所資料中繼（約 5 分鐘更新）。盤前顯示試撮價；成交價紅底＝漲停、綠底＝跌停。量為累計成交張數。本頁僅供參考，不構成投資建議。
 </footer>
 <script>
 const PROXY = 'https://stock-quote-proxy.lingochen.workers.dev/mis';
@@ -285,8 +285,10 @@ $('refresh').onclick = ()=>{ bootStocks(); fetchRelay(); };
 tickClock(); setInterval(tickClock, 1000);
 render();
 bootStocks(); fetchRelay();
-setInterval(()=>{ if(!document.hidden) fetchStocks(); }, 15000);
-setInterval(()=>{ if(!document.hidden) fetchRelay(); }, 30000);
+setInterval(()=>{ fetchStocks(); }, 5000);
+setInterval(()=>{ fetchRelay(); }, 30000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ fetchStocks(); fetchRelay(); } });
+
 </script>
 </body>
 </html>
