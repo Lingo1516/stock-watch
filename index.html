@@ -24,6 +24,8 @@
   td.name{position:sticky;left:0;background:var(--bg);font-size:1.12rem;font-weight:700;color:#fff;z-index:1}
   td.name small{display:block;font-size:.72rem;color:var(--muted);font-weight:400;letter-spacing:.04em}
   .up{color:var(--up)} .dn{color:var(--dn)} .flat{color:var(--flat)} .dim{color:var(--muted)}
+  .flash{animation:flashBg 1s ease-out}
+  @keyframes flashBg{0%{background:#8a6d00}100%{background:transparent}}
   td.limit-up{background:var(--up);color:#fff!important;border-radius:4px}
   td.limit-dn{background:var(--dn);color:#fff!important;border-radius:4px}
   tbody tr:active td.name{background:#1e2126}
@@ -192,6 +194,7 @@ function futRow(){
 }
 
 let misMap = {};
+const prevPrices = {};
 function render(){
   const list = group==='g1' ? G1 : G2;
   const tb = $('rows'); tb.replaceChildren();
@@ -208,8 +211,12 @@ function render(){
     const small = document.createElement('small'); small.textContent = r.code;
     nameTd.appendChild(small);
     tr.appendChild(nameTd);
+    const pkey = s.type==='index' ? 'IDX' : (s.type==='fut' ? 'FUT' : s.ch);
+    const oldP = prevPrices[pkey];
+    const changed = oldP !== undefined && oldP !== null && r.price !== null && r.price !== undefined && oldP !== r.price;
+    if(r.price !== null && r.price !== undefined) prevPrices[pkey] = r.price;
     const cells = [
-      {v:fmtP(r.price), cls:' '+c + (r.limit==='up'?' limit-up':(r.limit==='dn'?' limit-dn':''))},
+      {v:fmtP(r.price), cls:' '+c + (r.limit==='up'?' limit-up':(r.limit==='dn'?' limit-dn':'')) + (changed ? ' flash' : '')},
       {v:fmtD(r.diff), cls:' '+c},
       {v:fmtPct(r.pct), cls:' '+c},
       {v:fmtP(r.bid), cls:''},
@@ -226,7 +233,7 @@ function render(){
   }
 }
 
-let lastStockOk = '', lastErr = false, gotPrice = false;
+let lastStockOk = '', lastErr = false, gotPrice = false, lastDataTime = '';
 async function fetchBatch(chs){
   const url = PROXY + '?ex_ch=' + encodeURIComponent(chs.join('|')).replace(/%7C/g,'|') + '&_=' + Date.now();
   const r = await fetch(url, {cache:'no-store'});
@@ -235,6 +242,7 @@ async function fetchBatch(chs){
   if(d.rtmessage !== 'OK') throw new Error(d.rtmessage || 'MIS error');
   let usable = 0;
   for(const it of d.msgArray || []){
+    if(it.t && it.t > lastDataTime) lastDataTime = it.t;
     if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it;
     if(it.ch) misMap[it.ch] = it;
     if(num(it.z)!==null || num(it.pz)!==null || num(it.trade && it.trade.z)!==null) usable++;
@@ -273,6 +281,7 @@ async function fetchRelay(){
 function updateStatus(){
   const parts = [];
   if(lastStockOk) parts.push('個股更新 ' + lastStockOk);
+  if(lastDataTime) parts.push('資料時間 ' + lastDataTime);
   if(relayUpdated) parts.push('台指期資料 ' + relayUpdated.slice(11));
   $('status').innerHTML = lastErr ? '<span class="err">連線不穩，重試中…</span>' : (parts.join(' · ') || '載入中…');
 }
