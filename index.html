@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自選股即時行情</title>
+<style>
+  :root{--bg:#101214;--panel:#17191c;--line:#2a2d31;--txt:#f2f2f2;--muted:#9aa0a6;--up:#ff3b30;--dn:#00c853;--flat:#ffd60a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  header{position:sticky;top:0;z-index:5;background:#1b1e23;border-bottom:1px solid var(--line);padding:.55rem .8rem}
+  .tabs{display:flex;gap:.5rem}
+  .tabs button{flex:1;background:#26292e;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:.55rem 0;font-size:1.05rem;font-weight:700;letter-spacing:.05em}
+  .tabs button.on{background:#0a84ff;border-color:#0a84ff;color:#fff}
+  .meta{display:flex;align-items:center;gap:.7rem;margin-top:.5rem;font-size:.82rem;color:var(--muted);flex-wrap:wrap}
+  .meta b{color:var(--txt);font-weight:600}
+  #refresh{margin-left:auto;background:#26292e;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:.3rem .8rem;font-size:.85rem}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:560px}
+  th,td{padding:.5rem .45rem;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  th{font-size:.85rem;color:var(--muted);font-weight:600;background:#141619;position:sticky;top:0}
+  td{font-size:1.06rem;font-weight:600}
+  th.l,td.l{text-align:left}
+  td.name{position:sticky;left:0;background:var(--bg);font-size:1.12rem;font-weight:700;color:#fff;z-index:1}
+  td.name small{display:block;font-size:.72rem;color:var(--muted);font-weight:400;letter-spacing:.04em}
+  .up{color:var(--up)} .dn{color:var(--dn)} .flat{color:var(--flat)} .dim{color:var(--muted)}
+  td.limit-up{background:var(--up);color:#fff!important;border-radius:4px}
+  td.limit-dn{background:var(--dn);color:#fff!important;border-radius:4px}
+  tbody tr:active td.name{background:#1e2126}
+  footer{padding:1rem .9rem 1.6rem;color:var(--muted);font-size:.8rem;line-height:1.7}
+  .err{color:#ff9f0a}
+</style>
+</head>
+<body>
+<header>
+  <div class="tabs">
+    <button id="tab-g1" class="on">群組一</button>
+    <button id="tab-g2">群組二</button>
+  </div>
+  <div class="meta">
+    <span>現在 <b id="clock">--:--:--</b></span>
+    <span id="status">載入中…</span>
+    <button id="refresh">↻ 立即更新</button>
+  </div>
+</header>
+<div class="scroll">
+<table>
+  <thead><tr>
+    <th class="l">商品</th><th>成交</th><th>漲跌</th><th>幅度</th><th>買進</th><th>賣出</th><th>量</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+<footer>
+  資料來源：個股為證交所 MIS 即時行情，開啟頁面時約每 10 秒自動更新；台指近與加權指經期交所資料中繼（約 5 分鐘更新）。盤前顯示試撮價；成交價紅底＝漲停、綠底＝跌停。量為累計成交張數。本頁僅供參考，不構成投資建議。
+</footer>
+<script>
+const PROXY = 'https://stock-quote-proxy.lingochen.workers.dev/mis';
+const RELAY = 'https://raw.githubusercontent.com/Lingo1516/market-watch/data/quotes.json';
+
+const G1 = [
+  {type:'index', name:'加權指', code:'指數'},
+  {ch:'tse_2313.tw', name:'華通', code:'2313'},
+  {ch:'tse_3481.tw', name:'群創', code:'3481'},
+  {ch:'otc_6530.tw', name:'創威', code:'6530'},
+  {ch:'tse_3231.tw', name:'緯創', code:'3231'},
+  {ch:'otc_5302.tw', name:'太欣', code:'5302'},
+  {ch:'tse_6805.tw', name:'富世達', code:'6805'},
+  {ch:'tse_6658.tw', name:'聯策', code:'6658'},
+  {ch:'tse_3714.tw', name:'富采', code:'3714'},
+  {ch:'tse_3576.tw', name:'聯合再生', code:'3576'},
+  {ch:'tse_2455.tw', name:'全新', code:'2455'},
+  {ch:'otc_1785.tw', name:'光洋科', code:'1785'},
+  {ch:'tse_2634.tw', name:'漢翔', code:'2634'},
+  {ch:'otc_6693.tw', name:'廣閎科', code:'6693'},
+  {ch:'tse_4540.tw', name:'全球傳動', code:'4540'},
+  {ch:'otc_8358.tw', name:'金居', code:'8358'},
+  {ch:'otc_4991.tw', name:'環宇-KY', code:'4991'},
+  {ch:'tse_2409.tw', name:'友達', code:'2409'},
+  {ch:'tse_0050.tw', name:'元大台灣50', code:'0050'}
+];
+const G2 = [
+  {type:'fut', name:'台指近', code:'台指期'},
+  {ch:'tse_2317.tw', name:'鴻海', code:'2317'},
+  {ch:'tse_2330.tw', name:'台積電', code:'2330'},
+  {ch:'tse_2308.tw', name:'台達電', code:'2308'},
+  {ch:'tse_1714.tw', name:'和桐', code:'1714'},
+  {ch:'tse_2332.tw', name:'友訊', code:'2332'},
+  {ch:'otc_1815.tw', name:'富喬', code:'1815'},
+  {ch:'tse_2484.tw', name:'希華', code:'2484'},
+  {ch:'tse_2327.tw', name:'國巨*', code:'2327'},
+  {ch:'tse_2344.tw', name:'華邦電', code:'2344'},
+  {ch:'tse_6770.tw', name:'力積電', code:'6770'},
+  {ch:'tse_2408.tw', name:'南亞科', code:'2408'},
+  {ch:'tse_2337.tw', name:'旺宏', code:'2337'},
+  {ch:'tse_2382.tw', name:'廣達', code:'2382'},
+  {ch:'tse_2356.tw', name:'英業達', code:'2356'},
+  {ch:'tse_2368.tw', name:'金像電', code:'2368'},
+  {ch:'tse_3037.tw', name:'欣興', code:'3037'},
+  {ch:'tse_2324.tw', name:'仁寶', code:'2324'},
+  {ch:'tse_2454.tw', name:'聯發科', code:'2454'},
+  {ch:'tse_3008.tw', name:'大立光', code:'3008'},
+  {ch:'tse_2059.tw', name:'川湖', code:'2059'},
+  {ch:'tse_3189.tw', name:'景碩', code:'3189'}
+];
+const ALL_CH = ['tse_t00.tw'].concat(G1.concat(G2).filter(s=>s.ch).map(s=>s.ch));
+
+let group = 'g1';
+const state = {};   // key -> last good row data
+let relayData = null, relayUpdated = '';
+
+const $ = id => document.getElementById(id);
+function num(x){ if(x===null||x===undefined||x===''||x==='-') return null; const v=parseFloat(x); return isNaN(v)?null:v; }
+function fmtP(v){ if(v===null||v===undefined) return '—'; if(Number.isInteger(v)) return String(v); return v.toFixed(2); }
+function fmtD(d){ if(d===null||d===undefined) return '—'; const s = d>0?'+':(d<0?'-':''); return s + fmtP(Math.abs(d)); }
+function fmtPct(p){ if(p===null||p===undefined) return '—'; return (p>0?'+':(p<0?'-':'')) + Math.abs(p).toFixed(2) + '%'; }
+function fmtV(v){ if(v===null||v===undefined) return '—'; return Number(v).toLocaleString('en-US'); }
+function cls(d){ return d>0?'up':(d<0?'dn':'flat'); }
+function firstLvl(s){ if(!s) return null; return num(s.split('_')[0]); }
+
+function stockRow(s, it){
+  const key = s.ch;
+  const prev = state[key] || {};
+  let price = num(it && it.z);
+  if(price===null && it && it.trade) price = num(it.trade.z);
+  if(price===null) price = num(it && it.pz);
+  if(price===null) price = prev.price ?? null;
+  const y = num(it && it.y) ?? prev.y ?? null;
+  const bid = (it && firstLvl(it.b)) ?? prev.bid ?? null;
+  const ask = (it && firstLvl(it.a)) ?? prev.ask ?? null;
+  const vol = num(it && it.v) ?? prev.vol ?? null;
+  const u = num(it && it.u), w = num(it && it.w);
+  const diff = (price!==null && y!==null) ? price - y : null;
+  const pct = (diff!==null && y) ? diff / y * 100 : null;
+  const row = {name:s.name, code:s.code, price, diff, pct, bid, ask, vol,
+               limit: (price!==null && u!==null && price>=u) ? 'up' : (price!==null && w!==null && price<=w) ? 'dn' : null};
+  if(price!==null || y!==null) state[key] = Object.assign({}, prev, {price, y, bid, ask, vol});
+  return row;
+}
+
+function indexRow(){
+  const key = 'IDX';
+  const prev = state[key] || {};
+  let row = null;
+  const it = misMap['tse_t00.tw'];
+  const z = num(it && it.z), y = num(it && it.y);
+  if(z!==null){
+    const yy = y ?? prev.y ?? null;
+    row = {name:'加權指', code:'指數', price:z, diff:(yy!==null? z-yy : null), pct:(yy? (z-yy)/yy*100 : null), bid:null, ask:null, vol:null, limit:null};
+    state[key] = {price:z, y:yy};
+  } else if(relayData){
+    const spot = relayData.find(q=>q.SymbolID==='TXF-S');
+    if(spot){
+      const p = num(spot.CLastPrice), d = num(spot.CDiff), r = num(spot.CDiffRate);
+      if(p!==null) row = {name:'加權指', code:'指數', price:p, diff:d, pct:r, bid:null, ask:null, vol:null, limit:null};
+    }
+  }
+  if(!row && prev.price!==undefined && prev.price!==null){
+    const yy = prev.y;
+    row = {name:'加權指', code:'指數', price:prev.price, diff:(yy? prev.price-yy : null), pct:(yy? (prev.price-yy)/yy*100 : null), bid:null, ask:null, vol:null, limit:null};
+  }
+  return row || {name:'加權指', code:'指數', price:null, diff:null, pct:null, bid:null, ask:null, vol:null, limit:null};
+}
+
+function futRow(){
+  const blank = {name:'台指近', code:'台指期', price:null, diff:null, pct:null, bid:null, ask:null, vol:null, limit:null};
+  if(!relayData) return state['FUT'] || blank;
+  const futs = relayData.filter(q=>/^TXF[A-Z]\d-[FM]$/.test(q.SymbolID||''));
+  if(!futs.length) return state['FUT'] || blank;
+  const front = futs[0].SymbolID.slice(0,6);
+  const pair = futs.filter(q=>q.SymbolID.slice(0,6)===front);
+  const stamp = q => {
+    let d = q.CDate || '00000000', t = (q.CTime || '000000').padStart(6,'0');
+    if(q.SymbolID.endsWith('-M') && t < '120000') d = String(Number(d)+1); // 夜盤跨午夜
+    return d + t;
+  };
+  pair.sort((a,b)=> stamp(b).localeCompare(stamp(a)));
+  const q = pair[0];
+  const row = {name:'台指近', code:'台指期', price:num(q.CLastPrice), diff:num(q.CDiff), pct:num(q.CDiffRate),
+               bid:num(q.CBidPrice1) ?? num(q.CBestBidPrice), ask:num(q.CAskPrice1) ?? num(q.CBestAskPrice),
+               vol:num(q.CTotalVolume), limit:null};
+  if(row.price!==null) state['FUT'] = row;
+  return row;
+}
+
+let misMap = {};
+function render(){
+  const list = group==='g1' ? G1 : G2;
+  const tb = $('rows'); tb.replaceChildren();
+  for(const s of list){
+    let r;
+    if(s.type==='index') r = indexRow();
+    else if(s.type==='fut') r = futRow();
+    else r = stockRow(s, misMap[s.ch]);
+    const tr = document.createElement('tr');
+    const c = r.diff===null ? 'dim' : cls(r.diff);
+    const nameTd = document.createElement('td');
+    nameTd.className = 'l name';
+    nameTd.textContent = r.name;
+    const small = document.createElement('small'); small.textContent = r.code;
+    nameTd.appendChild(small);
+    tr.appendChild(nameTd);
+    const cells = [
+      {v:fmtP(r.price), cls:' '+c + (r.limit==='up'?' limit-up':(r.limit==='dn'?' limit-dn':''))},
+      {v:fmtD(r.diff), cls:' '+c},
+      {v:fmtPct(r.pct), cls:' '+c},
+      {v:fmtP(r.bid), cls:''},
+      {v:fmtP(r.ask), cls:''},
+      {v:fmtV(r.vol), cls:' dim'}
+    ];
+    for(const cell of cells){
+      const td = document.createElement('td');
+      td.textContent = cell.v;
+      if(cell.cls.trim()) td.className = cell.cls.trim();
+      tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+}
+
+let lastStockOk = '', lastErr = false;
+async function fetchStocks(){
+  try{
+    const url = PROXY + '?ex_ch=' + encodeURIComponent(ALL_CH.join('|')).replace(/%7C/g,'|') + '&_=' + Date.now();
+    const r = await fetch(url, {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if(d.rtmessage !== 'OK') throw new Error(d.rtmessage || 'MIS error');
+    misMap = {};
+    for(const it of d.msgArray || []) misMap[it.ch] = it;
+    lastStockOk = new Date().toLocaleTimeString('zh-TW',{hour12:false});
+    lastErr = false;
+  }catch(e){ lastErr = true; }
+  updateStatus(); render();
+}
+async function fetchRelay(){
+  try{
+    const r = await fetch(RELAY + '?_=' + Date.now(), {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    relayData = d.quotes || [];
+    relayUpdated = d.updated || '';
+  }catch(e){ /* 保留上一份 */ }
+  updateStatus(); render();
+}
+function updateStatus(){
+  const parts = [];
+  if(lastStockOk) parts.push('個股更新 ' + lastStockOk);
+  if(relayUpdated) parts.push('台指期資料 ' + relayUpdated.slice(11));
+  $('status').innerHTML = lastErr ? '<span class="err">連線不穩，重試中…</span>' : (parts.join(' · ') || '載入中…');
+}
+function tickClock(){ $('clock').textContent = new Date().toLocaleTimeString('zh-TW',{hour12:false}); }
+
+$('tab-g1').onclick = ()=>{ group='g1'; $('tab-g1').classList.add('on'); $('tab-g2').classList.remove('on'); render(); };
+$('tab-g2').onclick = ()=>{ group='g2'; $('tab-g2').classList.add('on'); $('tab-g1').classList.remove('on'); render(); };
+$('refresh').onclick = ()=>{ fetchStocks(); fetchRelay(); };
+
+tickClock(); setInterval(tickClock, 1000);
+render();
+fetchStocks(); fetchRelay();
+setInterval(()=>{ if(!document.hidden) fetchStocks(); }, 10000);
+setInterval(()=>{ if(!document.hidden) fetchRelay(); }, 30000);
+</script>
+</body>
+</html>
