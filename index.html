@@ -218,8 +218,9 @@ function render(){
   }
 }
 
-let lastStockOk = '', lastErr = false;
+let lastStockOk = '', lastErr = false, gotPrice = false;
 async function fetchStocks(){
+  let usable = 0;
   try{
     const url = PROXY + '?ex_ch=' + encodeURIComponent(ALL_CH.join('|')).replace(/%7C/g,'|') + '&_=' + Date.now();
     const r = await fetch(url, {cache:'no-store'});
@@ -227,11 +228,24 @@ async function fetchStocks(){
     const d = await r.json();
     if(d.rtmessage !== 'OK') throw new Error(d.rtmessage || 'MIS error');
     misMap = {};
-    for(const it of d.msgArray || []){ if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it; if(it.ch) misMap[it.ch] = it; }
+    for(const it of d.msgArray || []){
+      if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it;
+      if(it.ch) misMap[it.ch] = it;
+      if(num(it.z)!==null || num(it.pz)!==null || num(it.trade && it.trade.z)!==null) usable++;
+    }
     lastStockOk = new Date().toLocaleTimeString('zh-TW',{hour12:false});
     lastErr = false;
+    if(usable > 0) gotPrice = true;
   }catch(e){ lastErr = true; }
   updateStatus(); render();
+  return usable;
+}
+async function bootStocks(){
+  for(let i=0; i<5 && !gotPrice; i++){
+    const u = await fetchStocks();
+    if(u > 0) break;
+    await new Promise(res=>setTimeout(res, 3000));
+  }
 }
 async function fetchRelay(){
   try{
@@ -253,11 +267,11 @@ function tickClock(){ $('clock').textContent = new Date().toLocaleTimeString('zh
 
 $('tab-g1').onclick = ()=>{ group='g1'; $('tab-g1').classList.add('on'); $('tab-g2').classList.remove('on'); render(); };
 $('tab-g2').onclick = ()=>{ group='g2'; $('tab-g2').classList.add('on'); $('tab-g1').classList.remove('on'); render(); };
-$('refresh').onclick = ()=>{ fetchStocks(); fetchRelay(); };
+$('refresh').onclick = ()=>{ bootStocks(); fetchRelay(); };
 
 tickClock(); setInterval(tickClock, 1000);
 render();
-fetchStocks(); fetchRelay();
+bootStocks(); fetchRelay();
 setInterval(()=>{ if(!document.hidden) fetchStocks(); }, 10000);
 setInterval(()=>{ if(!document.hidden) fetchRelay(); }, 30000);
 </script>
