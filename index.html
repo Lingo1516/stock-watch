@@ -261,18 +261,33 @@ async function fetchBatch(chs){
   }
   return usable;
 }
+const QUOTES_URL = 'https://stock-quote-proxy.lingochen.workers.dev/quotes';
 async function fetchStocks(){
   cycle++;
-  if(cycle % 6 === 1) BATCHES.forEach((b, i)=>{ batchOrders[i] = shuffledCopy(b); });
-  const results = await Promise.allSettled(BATCHES.map((b, i)=> fetchBatch(batchOrders[i])));
-  let usable = 0, ok = 0;
-  for(const r of results){ if(r.status==='fulfilled'){ ok++; usable += r.value; } }
-  if(ok > 0){
-    failStreak = 0;
-    lastStockOk = new Date().toLocaleTimeString('zh-TW',{hour12:false});
-    lastErr = false;
-    if(usable > 0) gotPrice = true;
-  } else { failStreak++; if(failStreak >= 3) lastErr = true; }
+  let usable = 0;
+  try {
+    const r = await fetch(QUOTES_URL + '?_=' + Date.now(), {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const arr = d.msgArray || [];
+    for(const it of arr){
+      if(it.t && it.t > lastDataTime) lastDataTime = it.t;
+      const keys = [];
+      if(it.ex && it.ch) keys.push(it.ex + '_' + it.ch);
+      if(it.ch) keys.push(it.ch);
+      for(const k of keys){
+        const oldIt = misMap[k];
+        if(!oldIt || (it.t || '') > (oldIt.t || '') || ((it.t || '') === (oldIt.t || '') && (num(it.v) || 0) >= (num(oldIt.v) || 0))) misMap[k] = it;
+      }
+      if(num(it.z)!==null || num(it.pz)!==null || num(it.trade && it.trade.z)!==null) usable++;
+    }
+    if(arr.length > 0){
+      failStreak = 0;
+      lastStockOk = new Date().toLocaleTimeString('zh-TW',{hour12:false});
+      lastErr = false;
+      if(usable > 0) gotPrice = true;
+    } else { failStreak++; if(failStreak >= 3) lastErr = true; }
+  } catch(e) { failStreak++; if(failStreak >= 3) lastErr = true; }
   updateStatus(); render();
   return usable;
 }
