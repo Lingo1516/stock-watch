@@ -52,7 +52,7 @@
 </table>
 </div>
 <footer>
-  資料來源：個股為證交所 MIS 即時行情，開啟頁面時約每 10 秒自動更新；台指近與加權指經期交所資料中繼（約 5 分鐘更新）。盤前顯示試撮價；成交價紅底＝漲停、綠底＝跌停。量為累計成交張數。本頁僅供參考，不構成投資建議。
+  資料來源：個股為證交所 MIS 即時行情，開啟頁面時約每 15 秒自動更新；台指近與加權指經期交所資料中繼（約 5 分鐘更新）。盤前顯示試撮價；成交價紅底＝漲停、綠底＝跌停。量為累計成交張數。本頁僅供參考，不構成投資建議。
 </footer>
 <script>
 const PROXY = 'https://stock-quote-proxy.lingochen.workers.dev/mis';
@@ -103,7 +103,9 @@ const G2 = [
   {ch:'tse_2059.tw', name:'川湖', code:'2059'},
   {ch:'tse_3189.tw', name:'景碩', code:'3189'}
 ];
-const ALL_CH = ['tse_t00.tw'].concat(G1.concat(G2).filter(s=>s.ch).map(s=>s.ch));
+const G1_CH = ['tse_t00.tw'].concat(G1.filter(s=>s.ch).map(s=>s.ch));
+const G2_CH = G2.filter(s=>s.ch).map(s=>s.ch);
+const BATCHES = [G1_CH, G2_CH.slice(0,11), G2_CH.slice(11)];
 
 let group = 'g1';
 const state = {};   // key -> last good row data
@@ -176,6 +178,12 @@ function futRow(){
   };
   pair.sort((a,b)=> stamp(b).localeCompare(stamp(a)));
   const q = pair[0];
+  const nowT = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Taipei'}));
+  const ymd = d => d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate();
+  const todayS = String(ymd(nowT));
+  const yestS = String(ymd(new Date(nowT - 864e5)));
+  const fresh = q.CDate === todayS || (nowT.getHours() < 5 && q.CDate === yestS);
+  if(!fresh) return state['FUT'] || blank;
   const row = {name:'台指近', code:'台指期', price:num(q.CLastPrice), diff:num(q.CDiff), pct:num(q.CDiffRate),
                bid:num(q.CBidPrice1) ?? num(q.CBestBidPrice), ask:num(q.CAskPrice1) ?? num(q.CBestAskPrice),
                vol:num(q.CTotalVolume), limit:null};
@@ -219,24 +227,29 @@ function render(){
 }
 
 let lastStockOk = '', lastErr = false, gotPrice = false;
-async function fetchStocks(){
+async function fetchBatch(chs){
+  const url = PROXY + '?ex_ch=' + encodeURIComponent(chs.join('|')).replace(/%7C/g,'|') + '&_=' + Date.now();
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const d = await r.json();
+  if(d.rtmessage !== 'OK') throw new Error(d.rtmessage || 'MIS error');
   let usable = 0;
-  try{
-    const url = PROXY + '?ex_ch=' + encodeURIComponent(ALL_CH.join('|')).replace(/%7C/g,'|') + '&_=' + Date.now();
-    const r = await fetch(url, {cache:'no-store'});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const d = await r.json();
-    if(d.rtmessage !== 'OK') throw new Error(d.rtmessage || 'MIS error');
-    misMap = {};
-    for(const it of d.msgArray || []){
-      if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it;
-      if(it.ch) misMap[it.ch] = it;
-      if(num(it.z)!==null || num(it.pz)!==null || num(it.trade && it.trade.z)!==null) usable++;
-    }
+  for(const it of d.msgArray || []){
+    if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it;
+    if(it.ch) misMap[it.ch] = it;
+    if(num(it.z)!==null || num(it.pz)!==null || num(it.trade && it.trade.z)!==null) usable++;
+  }
+  return usable;
+}
+async function fetchStocks(){
+  const results = await Promise.allSettled(BATCHES.map(fetchBatch));
+  let usable = 0, ok = 0;
+  for(const r of results){ if(r.status==='fulfilled'){ ok++; usable += r.value; } }
+  if(ok > 0){
     lastStockOk = new Date().toLocaleTimeString('zh-TW',{hour12:false});
     lastErr = false;
     if(usable > 0) gotPrice = true;
-  }catch(e){ lastErr = true; }
+  } else lastErr = true;
   updateStatus(); render();
   return usable;
 }
@@ -272,7 +285,7 @@ $('refresh').onclick = ()=>{ bootStocks(); fetchRelay(); };
 tickClock(); setInterval(tickClock, 1000);
 render();
 bootStocks(); fetchRelay();
-setInterval(()=>{ if(!document.hidden) fetchStocks(); }, 10000);
+setInterval(()=>{ if(!document.hidden) fetchStocks(); }, 15000);
 setInterval(()=>{ if(!document.hidden) fetchRelay(); }, 30000);
 </script>
 </body>
