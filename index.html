@@ -243,8 +243,13 @@ async function fetchBatch(chs){
   let usable = 0;
   for(const it of d.msgArray || []){
     if(it.t && it.t > lastDataTime) lastDataTime = it.t;
-    if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it;
-    if(it.ch) misMap[it.ch] = it;
+    const keys = [];
+    if(it.ex && it.ch) keys.push(it.ex + '_' + it.ch);
+    if(it.ch) keys.push(it.ch);
+    for(const k of keys){
+      const oldIt = misMap[k];
+      if(!oldIt || (it.t || '') > (oldIt.t || '') || ((it.t || '') === (oldIt.t || '') && (num(it.v) || 0) >= (num(oldIt.v) || 0))) misMap[k] = it;
+    }
     if(num(it.z)!==null || num(it.pz)!==null || num(it.trade && it.trade.z)!==null) usable++;
   }
   return usable;
