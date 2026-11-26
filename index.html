@@ -227,7 +227,7 @@ async function fetchStocks(){
     const d = await r.json();
     if(d.rtmessage !== 'OK') throw new Error(d.rtmessage || 'MIS error');
     misMap = {};
-    for(const it of d.msgArray || []) misMap[it.ch] = it;
+    for(const it of d.msgArray || []){ if(it.ex && it.ch) misMap[it.ex + '_' + it.ch] = it; if(it.ch) misMap[it.ch] = it; }
     lastStockOk = new Date().toLocaleTimeString('zh-TW',{hour12:false});
     lastErr = false;
   }catch(e){ lastErr = true; }
